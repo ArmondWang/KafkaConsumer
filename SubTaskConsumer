@@ -1,0 +1,133 @@
+
+
+import java.io.IOException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+
+import kafka.consumer.ConsumerIterator;
+import kafka.consumer.KafkaStream;
+import kafka.message.MessageAndMetadata;
+
+public class SubTaskConsumer implements Runnable {
+	private FSDataOutputStream dos;
+	public String outputFileName;
+	private refreshThread refresher;
+	private Object syncObj = new Object();
+	private String m_destDir;
+	private KafkaStream m_stream;
+	private int m_threadNumber;
+	FileSystem hdfs;
+
+	public SubTaskConsumer(KafkaStream a_stream, int a_threadNumber,
+			FileSystem fs, String destDir) {
+		this.m_threadNumber = a_threadNumber;
+		this.m_destDir = destDir;
+		this.hdfs = fs;
+		this.m_stream = a_stream;
+		try {
+			init();
+			System.out.println("the current m_threadNumber is: " + m_threadNumber);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	class refreshThread implements Runnable {
+		@Override
+		public void run() {
+			try {
+				synchronized (syncObj) {
+					if (dos != null) {
+						dos.hsync();
+					}
+				}
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+
+
+	private void init() throws IOException {
+		ScheduledExecutorService scheduler = Executors
+				.newSingleThreadScheduledExecutor();
+		refresher = new refreshThread();
+		scheduler
+				.scheduleAtFixedRate(refresher, 0, 1000, TimeUnit.MILLISECONDS);
+	}
+	private void dumpToFile(String dateString,byte[] message) throws IOException{
+    	String year=dateString.substring(0,4);
+    	String month=dateString.substring(4,6);
+    	String day=dateString.substring(6);
+    	String pathString=m_destDir+"/"+year+"/"+month+"/"+day+"/kafkadata"+m_threadNumber;
+    	Path path=new Path(pathString);   	
+    	if(outputFileName==null || dos==null||!pathString.equals(outputFileName)){
+    		if(dos!=null){
+    			synchronized(syncObj){
+    				dos.flush();
+    				dos.close();
+    			}
+    			hdfs.rename(new Path(outputFileName), new Path(outputFileName+"."+System.currentTimeMillis()+".Done"));
+    		}
+    		if(hdfs.exists(path)){
+    			synchronized(syncObj){
+    				dos=hdfs.append(path);
+    			}
+    			System.out.println("open the output in the append mode: "+path);
+    		}else{
+    			synchronized(syncObj){
+    				dos=hdfs.create(path);
+    			}
+    			System.out.println("create the file output file: "+path);
+    		}
+    		outputFileName=pathString;	
+    	}
+    	dos.write(message);
+    	dos.write("\n".getBytes());
+    }
+
+	public SubTaskConsumer(KafkaStream a_stream, int a_threadNumber,
+			FileSystem fs) {
+		m_threadNumber = a_threadNumber;
+		m_stream = a_stream;
+		hdfs = fs;
+		System.out.println("come in 11111111");
+	}
+
+	
+	public void run() {
+		try {
+			ConsumerIterator<byte[], byte[]> it = m_stream.iterator();
+			while (it.hasNext()) {
+				MessageAndMetadata<byte[], byte[]> mam = it.next();
+				byte[] message = mam.message();
+				byte[] codedKerBytes = mam.key();
+				String dateString = "20150720"; // default value
+				if (codedKerBytes != null) {
+					String sourceFileName = new String(codedKerBytes);
+					int lastIndex = sourceFileName.lastIndexOf(".");
+					dateString = sourceFileName.substring(lastIndex + 1);
+				}
+				dumpToFile(dateString, message);
+			}
+		} catch (Exception e1) {
+			e1.printStackTrace();
+		} finally {
+			System.out.println("shutting down Thread: " + m_threadNumber);
+			try {
+				if (dos != null) {
+					dos.flush();
+					dos.close();
+				}
+				hdfs.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+}
