@@ -57,8 +57,7 @@ public class SubTaskConsumer implements Runnable {
 		ScheduledExecutorService scheduler = Executors
 				.newSingleThreadScheduledExecutor();
 		refresher = new refreshThread();
-		scheduler
-				.scheduleAtFixedRate(refresher, 0, 1000, TimeUnit.MILLISECONDS);
+		scheduler.scheduleAtFixedRate(refresher, 0, 1000, TimeUnit.MILLISECONDS);
 	}
 	private void dumpToFile(String dateString,byte[] message) throws IOException{
     	String year=dateString.substring(0,4);
@@ -72,7 +71,7 @@ public class SubTaskConsumer implements Runnable {
     				dos.flush();
     				dos.close();
     			}
-    			hdfs.rename(new Path(outputFileName), new Path(outputFileName+"."+System.currentTimeMillis()+".Done"));
+    		hdfs.rename(new Path(outputFileName), new Path(outputFileName+"."+System.currentTimeMillis()+".Done"));
     		}
     		if(hdfs.exists(path)){
     			synchronized(syncObj){
@@ -96,7 +95,7 @@ public class SubTaskConsumer implements Runnable {
 		m_threadNumber = a_threadNumber;
 		m_stream = a_stream;
 		hdfs = fs;
-		System.out.println("come in 11111111");
+		System.out.println("123456");
 	}
 
 	
